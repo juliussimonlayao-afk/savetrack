@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<title>SaveTrack</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SaveTrack">
+<meta name="theme-color" content="#06090a">
+<style>
+  /* ===== Design tokens =====
+     Color: bg #06090A (near-black, slight blue cast), surface #0E1513,
+     card-stroke #1B2622, neon #39FF8A (signature green), neon-dim #1F7A4C,
+     text-primary #EAFBF1, text-dim #6E8377, danger #FF6B6B
+     Type: display = 'Space Grotesk' (headline numbers, goal amounts),
+           body/ui = 'Inter', mono utility = 'JetBrains Mono' (for ledger/amounts/days)
+     Signature: the Tap-to-Save button has a breathing idle glow, and on tap
+     fires a sonar-style ring pulse + amount counts up — the one moment of
+     delight in an otherwise quiet, disciplined screen.
+  */
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#06090A;
+    --surface:#0E1513;
+    --surface-2:#101A17;
+    --stroke:#1B2622;
+    --stroke-soft:#141E1A;
+    --neon:#39FF8A;
+    --neon-dim:#1F7A4C;
+    --neon-soft:rgba(57,255,138,0.12);
+    --text:#EAFBF1;
+    --text-dim:#6E8377;
+    --text-faint:#46554C;
+    --danger:#FF6B6B;
+    --radius-lg:24px;
+    --radius-md:16px;
+    --radius-sm:10px;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 50% 0%, rgba(57,255,138,0.06), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior-y:none;
+  }
+
+  .app{
+    max-width:430px;
+    margin:0 auto;
+    min-height:100vh;
+    padding:20px 18px calc(100px + env(safe-area-inset-bottom));
+    position:relative;
+  }
+
+  /* ---- Header ---- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:6px 2px 18px;
+  }
+  .brand{
+    display:flex; align-items:center; gap:8px;
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600; font-size:17px; letter-spacing:0.2px;
+  }
+  .brand-dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--neon);
+    box-shadow:0 0 10px var(--neon), 0 0 2px var(--neon);
+  }
+  .icon-btn{
+    width:36px; height:36px; border-radius:50%;
+    border:1px solid var(--stroke);
+    background:var(--surface);
+    color:var(--text-dim);
+    display:flex; align-items:center; justify-content:center;
+    font-size:16px;
+  }
+
+  /* ---- Tabs ---- */
+  .tabs{
+    display:flex; gap:6px;
+    background:var(--surface);
+    border:1px solid var(--stroke);
+    border-radius:14px;
+    padding:4px;
+    margin-bottom:20px;
+  }
+  .tab{
+    flex:1;
+    text-align:center;
+    padding:10px 0;
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--text-dim);
+    border-radius:11px;
+    transition:all .25s ease;
+    cursor:pointer;
+    user-select:none;
+  }
+  .tab.active{
+    background:var(--neon);
+    color:#04140B;
+  }
+
+  .view{ display:none; animation:fadeIn .35s ease; }
+  .view.active{ display:block; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
+
+  /* ---- Goal Card ---- */
+  .goal-card{
+    background:linear-gradient(165deg, var(--surface) 0%, #0A1210 100%);
+    border:1px solid var(--stroke);
+    border-radius:var(--radius-lg);
+    padding:22px;
+    margin-bottom:22px;
+    position:relative;
+    overflow:hidden;
+  }
+  .goal-card::before{
+    content:'';
+    position:absolute; top:-60%; right:-30%;
+    width:220px; height:220px;
+    background:radial-gradient(circle, var(--neon-soft), transparent 70%);
+    pointer-events:none;
+  }
+  .goal-row{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    margin-bottom:18px;
+    position:relative; z-index:1;
+  }
+  .goal-label{
+    font-size:11.5px; letter-spacing:1.2px; text-transform:uppercase;
+    color:var(--text-dim); font-weight:600; margin-bottom:6px;
+  }
+  .goal-amount{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:30px; font-weight:700;
+    color:var(--text);
+    line-height:1.1;
+  }
+  .goal-amount span{ color:var(--neon); }
+  .days-pill{
+    text-align:right;
+  }
+  .days-num{
+    font-family:'JetBrains Mono', monospace;
+    font-size:22px; font-weight:600;
+    color:var(--neon);
+  }
+  .days-cap{
+    font-size:10.5px; letter-spacing:1px; text-transform:uppercase;
+    color:var(--text-dim); font-weight:500;
+  }
+
+  .progress-track{
+    height:10px;
+    background:var(--surface-2);
+    border:1px solid var(--stroke-soft);
+    border-radius:20px;
+    overflow:hidden;
+    position:relative; z-index:1;
+  }
+  .progress-fill{
+    height:100%;
+    width:0%;
+    border-radius:20px;
+    background:linear-gradient(90deg, var(--neon-dim), var(--neon));
+    box-shadow:0 0 12px rgba(57,255,138,0.55);
+    transition:width 1s cubic-bezier(.16,1,.3,1);
+  }
+  .progress-meta{
+    display:flex; justify-content:space-between;
+    margin-top:10px; font-size:12.5px; color:var(--text-dim);
+    position:relative; z-index:1;
+    font-family:'JetBrains Mono', monospace;
+  }
+  .progress-meta b{ color:var(--text); font-weight:600; }
+
+  /* ---- Tap button zone ---- */
+  .tap-zone{
+    display:flex; flex-direction:column; align-items:center;
+    padding:18px 0 8px;
+  }
+  .ring-wrap{
+    position:relative;
+    width:220px; height:220px;
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom:22px;
+  }
+  .ring{
+    position:absolute; border-radius:50%;
+    border:1px solid var(--neon-dim);
+    opacity:0.55;
+  }
+  .ring.r1{ width:220px; height:220px; animation:breathe 3.2s ease-in-out infinite; }
+  .ring.r2{ width:185px; height:185px; animation:breathe 3.2s ease-in-out infinite .3s; }
+  @keyframes breathe{
+    0%,100%{ opacity:0.25; transform:scale(0.97); }
+    50%{ opacity:0.6; transform:scale(1.02); }
+  }
+
+  .tap-btn{
+    width:152px; height:152px;
+    border-radius:50%;
+    border:none;
+    background:
+      radial-gradient(circle at 32% 28%, rgba(255,255,255,0.35), transparent 45%),
+      radial-gradient(circle at 50% 110%, rgba(0,0,0,0.4), transparent 60%),
+      linear-gradient(160deg, #3FFF93 0%, #18B05E 60%, #0B7A41 100%);
+    box-shadow:
+      0 0 0 1px rgba(57,255,138,0.4),
+      0 0 30px rgba(57,255,138,0.45),
+      0 0 70px rgba(57,255,138,0.18),
+      inset 0 2px 6px rgba(255,255,255,0.4),
+      inset 0 -10px 18px rgba(0,0,0,0.35);
+    color:#04150B;
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:15.5px;
+    line-height:1.25;
+    letter-spacing:0.2px;
+    cursor:pointer;
+    position:relative; z-index:2;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .tap-btn:active{
+    transform:scale(0.94);
+    box-shadow:
+      0 0 0 1px rgba(57,255,138,0.5),
+      0 0 16px rgba(57,255,138,0.5),
+      inset 0 2px 6px rgba(255,255,255,0.25),
+      inset 0 -6px 14px rgba(0,0,0,0.45);
+  }
+  .sonar{
+    position:absolute;
+    border-radius:50%;
+    border:2px solid var(--neon);
+    width:152px; height:152px;
+    pointer-events:none;
+    opacity:0;
+  }
+  .sonar.firing{
+    animation:sonar .85s ease-out forwards;
+  }
+  @keyframes sonar{
+    0%{ opacity:0.8; transform:scale(1); }
+    100%{ opacity:0; transform:scale(1.9); }
+  }
+
+  .tap-hint{
+    font-size:12.5px; color:var(--text-dim);
+    text-align:center;
+  }
+
+  /* ---- Recent saves list ---- */
+  .section-title{
+    font-size:13px; font-weight:600; letter-spacing:0.3px;
+    color:var(--text-dim); text-transform:uppercase;
+    margin:26px 2px 12px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .clear-link{
+    color:var(--text-faint); font-size:11.5px; text-transform:none;
+    font-weight:500;
+  }
+
+  .save-item, .todo-item{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface);
+    border:1px solid var(--stroke);
+    border-radius:var(--radius-md);
+    padding:14px 16px;
+    margin-bottom:10px;
+  }
+  .save-item-left{ display:flex; align-items:center; gap:12px; }
+  .save-icon{
+    width:36px; height:36px; border-radius:50%;
+    background:var(--neon-soft);
+    color:var(--neon);
+    display:flex; align-items:center; justify-content:center;
+    font-size:16px; flex-shrink:0;
+  }
+  .save-amount{
+    font-family:'JetBrains Mono', monospace;
+    font-weight:600; font-size:15px; color:var(--text);
+  }
+  .save-date{ font-size:11.5px; color:var(--text-dim); margin-top:2px; }
+  .del-x{
+    color:var(--text-faint); font-size:18px; padding:4px 8px; cursor:pointer;
+  }
+
+  .empty-state{
+    text-align:center;
+    padding:36px 20px;
+    color:var(--text-dim);
+    font-size:13.5px;
+    border:1px dashed var(--stroke);
+    border-radius:var(--radius-md);
+  }
+  .empty-state .e-icon{ font-size:26px; margin-bottom:8px; display:block; }
+
+  /* ---- Todo view ---- */
+  .add-todo-row{
+    display:flex; gap:10px;
+    margin-bottom:18px;
+  }
+  .add-todo-row input{
+    flex:1;
+    background:var(--surface);
+    border:1px solid var(--stroke);
+    border-radius:var(--radius-md);
+    padding:14px 16px;
+    color:var(--text);
+    font-size:14.5px;
+    font-family:'Inter', sans-serif;
+  }
+  .add-todo-row input::placeholder{ color:var(--text-faint); }
+  .add-todo-row input:focus{ outline:none; border-color:var(--neon-dim); }
+  .add-btn{
+    width:50px; height:50px; flex-shrink:0;
+    border-radius:var(--radius-md);
+    border:none;
+    background:var(--neon);
+    color:#04140B;
+    font-size:22px; font-weight:600;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+
+  .todo-item{ cursor:default; }
+  .todo-left{ display:flex; align-items:center; gap:12px; flex:1; min-width:0; }
+  .checkbox{
+    width:24px; height:24px; border-radius:50%;
+    border:1.5px solid var(--stroke);
+    flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    color:transparent;
+    font-size:13px;
+    cursor:pointer;
+    transition:all .2s ease;
+  }
+  .checkbox.checked{
+    background:var(--neon);
+    border-color:var(--neon);
+    color:#04140B;
+  }
+  .todo-text{
+    font-size:14.5px; color:var(--text);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .todo-text.done{
+    color:var(--text-faint);
+    text-decoration:line-through;
+  }
+  .todo-stats{
+    display:flex; gap:10px; margin-bottom:18px;
+  }
+  .stat-chip{
+    flex:1;
+    background:var(--surface);
+    border:1px solid var(--stroke);
+    border-radius:var(--radius-md);
+    padding:14px;
+    text-align:center;
+  }
+  .stat-chip .num{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:22px; font-weight:700; color:var(--neon);
+  }
+  .stat-chip .lab{
+    font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.6px; margin-top:2px;
+  }
+
+  /* ---- Bottom nav ---- */
+  .bottom-nav{
+    position:fixed; bottom:0; left:0; right:0;
+    display:flex; justify-content:center;
+    padding:14px 18px calc(14px + env(safe-area-inset-bottom));
+    background:linear-gradient(to top, rgba(6,9,10,0.97) 60%, rgba(6,9,10,0));
+    z-index:50;
+  }
+  .bottom-nav-inner{
+    width:100%; max-width:394px;
+    display:flex; gap:8px;
+    background:var(--surface);
+    border:1px solid var(--stroke);
+    border-radius:18px;
+    padding:8px;
+  }
+  .nav-btn{
+    flex:1;
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:8px 0;
+    border-radius:13px;
+    color:var(--text-dim);
+    font-size:11px; font-weight:600;
+    cursor:pointer;
+  }
+  .nav-btn.active{ color:var(--neon); background:rgba(57,255,138,0.08); }
+  .nav-btn .ic{ font-size:18px; }
+
+  /* ---- Modal (set goal) ---- */
+  .modal-backdrop{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,0.6);
+    backdrop-filter:blur(3px);
+    display:none;
+    align-items:flex-end;
+    justify-content:center;
+    z-index:100;
+  }
+  .modal-backdrop.open{ display:flex; }
+  .modal-sheet{
+    width:100%; max-width:430px;
+    background:var(--surface);
+    border:1px solid var(--stroke);
+    border-radius:24px 24px 0 0;
+    padding:24px 22px calc(28px + env(safe-area-inset-bottom));
+    animation:slideUp .3s cubic-bezier(.16,1,.3,1);
+  }
+  @keyframes slideUp{ from{ transform:translateY(100%); } to{ transform:translateY(0); } }
+  .modal-sheet h3{
+    font-family:'Space Grotesk', sans-serif;
+    margin:0 0 16px; font-size:18px; font-weight:600;
+  }
+  .modal-sheet label{
+    font-size:12px; color:var(--text-dim); font-weight:600;
+    text-transform:uppercase; letter-spacing:0.5px;
+    display:block; margin-bottom:8px;
+  }
+  .amount-input-wrap{
+    display:flex; align-items:center;
+    background:var(--surface-2);
+    border:1px solid var(--stroke);
+    border-radius:var(--radius-md);
+    padding:14px 16px;
+    margin-bottom:18px;
+  }
+  .amount-input-wrap span{
+    font-family:'JetBrains Mono', monospace;
+    color:var(--neon); font-weight:600; font-size:17px; margin-right:6px;
+  }
+  .amount-input-wrap input{
+    flex:1; background:none; border:none; outline:none;
+    color:var(--text); font-size:17px;
+    font-family:'JetBrains Mono', monospace;
+  }
+  .quick-grid{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:8px;
+    margin-bottom:20px;
+  }
+  .quick-chip{
+    background:var(--surface-2);
+    border:1px solid var(--stroke);
+    border-radius:12px;
+    padding:11px 4px;
+    text-align:center;
+    font-family:'JetBrains Mono', monospace;
+    font-size:13px;
+    font-weight:600;
+    color:var(--text);
+    cursor:pointer;
+    transition:all .15s ease;
+    user-select:none;
+  }
+  .quick-chip:active{ transform:scale(0.93); }
+  .quick-chip.selected{
+    background:var(--neon);
+    border-color:var(--neon);
+    color:#04140B;
+    box-shadow:0 0 14px rgba(57,255,138,0.4);
+  }
+  .modal-actions{ display:flex; gap:10px; }
+  .btn-secondary, .btn-primary{
+    flex:1; padding:14px 0; border-radius:var(--radius-md);
+    border:none; font-weight:600; font-size:14.5px; cursor:pointer;
+  }
+  .btn-secondary{ background:var(--surface-2); color:var(--text-dim); border:1px solid var(--stroke); }
+  .btn-primary{ background:var(--neon); color:#04140B; }
+
+  .toast{
+    position:fixed; top:18px; left:50%; transform:translateX(-50%) translateY(-20px);
+    background:var(--neon); color:#04140B;
+    padding:11px 20px; border-radius:30px;
+    font-size:13.5px; font-weight:600;
+    opacity:0; pointer-events:none;
+    transition:all .35s cubic-bezier(.16,1,.3,1);
+    z-index:200;
+    white-space:nowrap;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><span class="brand-dot"></span>SaveTrack</div>
+    <div class="icon-btn" id="settingsBtn">⚙</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-view="save">Savings</div>
+    <div class="tab" data-view="todo">To-Do</div>
+  </div>
+
+  <!-- SAVINGS VIEW -->
+  <div class="view active" id="view-save">
+    <div class="goal-card">
+      <div class="goal-row">
+        <div>
+          <div class="goal-label">Goal</div>
+          <div class="goal-amount">₱<span id="goalAmountText">0</span></div>
+        </div>
+        <div class="days-pill">
+          <div class="days-num" id="daysRemaining">—</div>
+          <div class="days-cap">Days Left<br><span style="font-size:9.5px; opacity:0.7;">(₱50/day)</span></div>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-meta">
+        <span><b id="savedAmountText">₱0</b> saved</span>
+        <span id="progressPercent">0%</span>
+      </div>
+    </div>
+
+    <div class="tap-zone">
+      <div class="ring-wrap">
+        <div class="ring r1"></div>
+        <div class="ring r2"></div>
+        <div class="sonar" id="sonarRing"></div>
+        <button class="tap-btn" id="tapSaveBtn">Tap to<br>Log Save</button>
+      </div>
+      <div class="tap-hint">Tap, enter the amount, done.</div>
+    </div>
+
+    <div class="section-title">
+      Recent Saves
+      <span class="clear-link" id="clearSavesBtn">clear all</span>
+    </div>
+    <div id="savesList"></div>
+  </div>
+
+  <!-- TODO VIEW -->
+  <div class="view" id="view-todo">
+    <div class="todo-stats">
+      <div class="stat-chip">
+        <div class="num" id="todoOpenCount">0</div>
+        <div class="lab">Open</div>
+      </div>
+      <div class="stat-chip">
+        <div class="num" id="todoDoneCount">0</div>
+        <div class="lab">Done</div>
+      </div>
+    </div>
+
+    <div class="add-todo-row">
+      <input type="text" id="todoInput" placeholder="What needs doing?" maxlength="80">
+      <button class="add-btn" id="addTodoBtn">+</button>
+    </div>
+
+    <div id="todoList"></div>
+  </div>
+</div>
+
+<div class="bottom-nav">
+  <div class="bottom-nav-inner">
+    <div class="nav-btn active" data-view="save"><span class="ic">💰</span>Savings</div>
+    <div class="nav-btn" data-view="todo"><span class="ic">✓</span>To-Do</div>
+  </div>
+</div>
+
+<!-- Set Goal Modal -->
+<div class="modal-backdrop" id="goalModalBackdrop">
+  <div class="modal-sheet">
+    <h3>Set Your Goal</h3>
+    <label>Target Amount</label>
+    <div class="amount-input-wrap">
+      <span>₱</span>
+      <input type="number" id="goalInput" placeholder="15000" inputmode="decimal">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cancelGoalBtn">Cancel</button>
+      <button class="btn-primary" id="saveGoalBtn">Save Goal</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log Save Modal -->
+<div class="modal-backdrop" id="saveModalBackdrop">
+  <div class="modal-sheet">
+    <h3>Log a Save</h3>
+    <label>Quick Amount</label>
+    <div class="quick-grid" id="quickGrid"></div>
+    <label>Or Enter Custom Amount</label>
+    <div class="amount-input-wrap">
+      <span>₱</span>
+      <input type="number" id="saveAmountInput" placeholder="50" inputmode="decimal" autofocus>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="cancelSaveBtn">Cancel</button>
+      <button class="btn-primary" id="confirmSaveBtn">Log It</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- Storage helpers ---------- */
+  var STORE_KEY = "savetrack_data_v1";
+
+  function loadData(){
+    try{
+      var raw = localStorage.getItem(STORE_KEY);
+      if(raw) return JSON.parse(raw);
+    }catch(e){}
+    return {
+      goalAmount: 15000,
+      saves: [],      // {amount, date}
+      todos: []       // {id, text, done}
+    };
+  }
+
+  function saveData(){
+    try{
+      localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    }catch(e){}
+  }
+
+  var state = loadData();
+
+  /* ---------- Formatting ---------- */
+  function fmt(n){
+    n = Number(n) || 0;
+    return n.toLocaleString('en-PH', {maximumFractionDigits: 2});
+  }
+
+  var DAY_UNIT = 50; // pesos that count as "one day" of progress
+
+  function totalSaved(){
+    return state.saves.reduce(function(sum, s){ return sum + s.amount; }, 0);
+  }
+
+  function daysLeft(){
+    var remaining = state.goalAmount - totalSaved();
+    if(remaining <= 0) return 0;
+    return Math.ceil(remaining / DAY_UNIT);
+  }
+
+  /* ---------- Toast ---------- */
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1800);
+  }
+
+  /* ---------- Render: Savings view ---------- */
+  function renderSavings(){
+    document.getElementById('goalAmountText').textContent = fmt(state.goalAmount);
+    var dl = daysLeft();
+    document.getElementById('daysRemaining').textContent = dl;
+
+    var saved = totalSaved();
+    var pct = state.goalAmount > 0 ? Math.min(100, (saved / state.goalAmount) * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressPercent').textContent = Math.round(pct) + '%';
+    document.getElementById('savedAmountText').textContent = '₱' + fmt(saved);
+
+    var list = document.getElementById('savesList');
+    if(state.saves.length === 0){
+      list.innerHTML = '<div class="empty-state"><span class="e-icon">🪙</span>No saves logged yet.<br>Tap the button above to log your first one.</div>';
+      return;
+    }
+    var sorted = state.saves.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+    list.innerHTML = sorted.map(function(s){
+      var d = new Date(s.date);
+      var dateStr = d.toLocaleDateString('en-PH', {month:'short', day:'numeric', year:'numeric'}) + ' · ' + d.toLocaleTimeString('en-PH', {hour:'numeric', minute:'2-digit'});
+      return '<div class="save-item" data-id="' + s.id + '">' +
+        '<div class="save-item-left">' +
+          '<div class="save-icon">↗</div>' +
+          '<div><div class="save-amount">+ ₱' + fmt(s.amount) + '</div><div class="save-date">' + dateStr + '</div></div>' +
+        '</div>' +
+        '<div class="del-x" data-del-save="' + s.id + '">×</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  /* ---------- Render: Todo view ---------- */
+  function renderTodos(){
+    var open = state.todos.filter(function(t){ return !t.done; }).length;
+    var done = state.todos.filter(function(t){ return t.done; }).length;
+    document.getElementById('todoOpenCount').textContent = open;
+    document.getElementById('todoDoneCount').textContent = done;
+
+    var list = document.getElementById('todoList');
+    if(state.todos.length === 0){
+      list.innerHTML = '<div class="empty-state"><span class="e-icon">📝</span>Nothing on your list.<br>Add your first task above.</div>';
+      return;
+    }
+    var sorted = state.todos.slice().sort(function(a,b){
+      if(a.done === b.done) return b.id - a.id;
+      return a.done ? 1 : -1;
+    });
+    list.innerHTML = sorted.map(function(t){
+      return '<div class="todo-item" data-id="' + t.id + '">' +
+        '<div class="todo-left">' +
+          '<div class="checkbox ' + (t.done ? 'checked' : '') + '" data-toggle="' + t.id + '">' + (t.done ? '✓' : '') + '</div>' +
+          '<div class="todo-text ' + (t.done ? 'done' : '') + '">' + escapeHtml(t.text) + '</div>' +
+        '</div>' +
+        '<div class="del-x" data-del-todo="' + t.id + '">×</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function escapeHtml(str){
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderAll(){
+    renderSavings();
+    renderTodos();
+  }
+
+  /* ---------- Tab + nav switching ---------- */
+  function switchView(viewName){
+    document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+    document.getElementById('view-' + viewName).classList.add('active');
+    document.querySelectorAll('.tab').forEach(function(t){
+      t.classList.toggle('active', t.dataset.view === viewName);
+    });
+    document.querySelectorAll('.nav-btn').forEach(function(n){
+      n.classList.toggle('active', n.dataset.view === viewName);
+    });
+  }
+  document.querySelectorAll('.tab, .nav-btn').forEach(function(el){
+    el.addEventListener('click', function(){ switchView(el.dataset.view); });
+  });
+
+  /* ---------- Goal modal ---------- */
+  var goalBackdrop = document.getElementById('goalModalBackdrop');
+  function openGoalModal(){
+    document.getElementById('goalInput').value = state.goalAmount || '';
+    goalBackdrop.classList.add('open');
+  }
+  function closeGoalModal(){ goalBackdrop.classList.remove('open'); }
+
+  document.getElementById('settingsBtn').addEventListener('click', openGoalModal);
+  document.getElementById('cancelGoalBtn').addEventListener('click', closeGoalModal);
+  goalBackdrop.addEventListener('click', function(e){ if(e.target === goalBackdrop) closeGoalModal(); });
+
+  document.getElementById('saveGoalBtn').addEventListener('click', function(){
+    var amt = parseFloat(document.getElementById('goalInput').value);
+    if(!amt || amt <= 0){ showToast('Enter a valid goal amount'); return; }
+    state.goalAmount = amt;
+    saveData();
+    renderSavings();
+    closeGoalModal();
+    showToast('Goal updated');
+  });
+
+  /* ---------- Log Save modal ---------- */
+  var saveBackdrop = document.getElementById('saveModalBackdrop');
+  var sonarRing = document.getElementById('sonarRing');
+  var QUICK_AMOUNTS = [10, 20, 30, 40, 50, 100, 200, 300, 400, 500, 1000];
+
+  var quickGrid = document.getElementById('quickGrid');
+  quickGrid.innerHTML = QUICK_AMOUNTS.map(function(v){
+    return '<div class="quick-chip" data-amt="' + v + '">₱' + v + '</div>';
+  }).join('');
+
+  var amountInputEl = document.getElementById('saveAmountInput');
+
+  function selectChip(amt){
+    document.querySelectorAll('.quick-chip').forEach(function(c){
+      c.classList.toggle('selected', Number(c.dataset.amt) === Number(amt));
+    });
+  }
+
+  quickGrid.addEventListener('click', function(e){
+    var chip = e.target.closest('.quick-chip');
+    if(!chip) return;
+    var amt = chip.dataset.amt;
+    amountInputEl.value = amt;
+    selectChip(amt);
+  });
+
+  // Typing a custom amount clears chip selection unless it matches one
+  amountInputEl.addEventListener('input', function(){
+    selectChip(amountInputEl.value);
+  });
+
+  function openSaveModal(){
+    amountInputEl.value = 50;
+    selectChip(50);
+    saveBackdrop.classList.add('open');
+    setTimeout(function(){
+      amountInputEl.focus();
+      amountInputEl.select();
+    }, 250);
+  }
+  function closeSaveModal(){ saveBackdrop.classList.remove('open'); }
+
+  document.getElementById('tapSaveBtn').addEventListener('click', function(){
+    sonarRing.classList.remove('firing');
+    void sonarRing.offsetWidth; // restart animation
+    sonarRing.classList.add('firing');
+    openSaveModal();
+  });
+  document.getElementById('cancelSaveBtn').addEventListener('click', closeSaveModal);
+  saveBackdrop.addEventListener('click', function(e){ if(e.target === saveBackdrop) closeSaveModal(); });
+
+  function logSave(){
+    var amt = parseFloat(amountInputEl.value);
+    if(!amt || amt <= 0){ showToast('Enter a valid amount'); return; }
+    state.saves.push({ id: Date.now(), amount: amt, date: new Date().toISOString() });
+    saveData();
+    renderSavings();
+    closeSaveModal();
+    showToast('₱' + fmt(amt) + ' logged 🌱');
+  }
+  document.getElementById('confirmSaveBtn').addEventListener('click', logSave);
+  amountInputEl.addEventListener('keydown', function(e){
+    if(e.key === 'Enter') logSave();
+  });
+
+  document.getElementById('clearSavesBtn').addEventListener('click', function(){
+    if(state.saves.length === 0) return;
+    if(confirm('Clear all logged saves? This cannot be undone.')){
+      state.saves = [];
+      saveData();
+      renderSavings();
+      showToast('Saves cleared');
+    }
+  });
+
+  document.getElementById('savesList').addEventListener('click', function(e){
+    var id = e.target.getAttribute('data-del-save');
+    if(id){
+      state.saves = state.saves.filter(function(s){ return String(s.id) !== id; });
+      saveData();
+      renderSavings();
+    }
+  });
+
+  /* ---------- Todo logic ---------- */
+  function addTodo(){
+    var input = document.getElementById('todoInput');
+    var text = input.value.trim();
+    if(!text) return;
+    state.todos.push({ id: Date.now(), text: text, done: false });
+    input.value = '';
+    saveData();
+    renderTodos();
+  }
+  document.getElementById('addTodoBtn').addEventListener('click', addTodo);
+  document.getElementById('todoInput').addEventListener('keydown', function(e){
+    if(e.key === 'Enter') addTodo();
+  });
+
+  document.getElementById('todoList').addEventListener('click', function(e){
+    var toggleId = e.target.getAttribute('data-toggle');
+    var delId = e.target.getAttribute('data-del-todo');
+    if(toggleId){
+      var t = state.todos.find(function(t){ return String(t.id) === toggleId; });
+      if(t){ t.done = !t.done; saveData(); renderTodos(); }
+    }
+    if(delId){
+      state.todos = state.todos.filter(function(t){ return String(t.id) !== delId; });
+      saveData(); renderTodos();
+    }
+  });
+
+  /* ---------- Init ---------- */
+  renderAll();
+
+  /* Note: days-remaining now only changes when a save is logged,
+     not on a timer, since it's derived from amount progress. */
+
+  /* ---------- Register service worker for offline support ---------- */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./service-worker.js').catch(function(err){
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+  }
+
+})();
+</script>
+</body>
+</html>
